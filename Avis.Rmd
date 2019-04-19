@@ -50,7 +50,7 @@ library(text2vec)
 library(reshape2)
 ```
 
-la lecture du fichier ne pose aucune difficulté en voici les 7 premiers éléments pour avoir une idée de sa structure.
+la lecture du fichier ne pose aucune difficulté, en voici les 7 premiers éléments pour avoir une idée de sa structure.
 
 ```{r data01, include=TRUE, message=TRUE}
 library(readr)
@@ -94,7 +94,7 @@ g02
 
 # 2. Identification des langues
 
-Quand les corpus sont constitués de langues multiples, il est donc essentiel de pouvoir les identifier afin de leur appliquer un traitement adéquat et indépendant. Les langues se construisent en elle-mêmes, par leur lexique et leur grammaire. 
+Quand les corpus sont constitués de plusieurs langues, il est donc essentiel de pouvoir les identifier afin de leur appliquer un traitement adéquat et indépendant. Les langues se construisent en elle-mêmes, par leur lexique et leur grammaire. 
 
 ## 2.1 avec textcat 
 
@@ -103,7 +103,7 @@ A cette fin on emploie le package `textcat`(@hornik_textcat_2013-1), qui s'appui
 ![calcul de distance à la langue](distancelangue.jpg)
 
 
-L'attribution à unelangue se fait avec le critère de la plus faible distance de la cible. 
+L'attribution à une langue se fait avec le critère de la plus faible distance de la cible. 
 
 On examinera la fiche [wikipedia](https://en.wikipedia.org/wiki/N-gram) pour plus de détail sur l'utilisation des Ngrams en NLP.
 
@@ -113,9 +113,9 @@ On examinera la fiche [wikipedia](https://en.wikipedia.org/wiki/N-gram) pour plu
 df$langue<-textcat(df$comments) #attention c'est long - une bonne dizaines de minutes.
 ```
 
-Incidemment on notera la domination des contenus en anglais (un peu plus de 60%) le français ne comptant que pour 22%, l'espagnol et l'allemand suivent avec moins de 5%  . Dans la suite de l'exercise on se concentre sur le corpus. 
+Incidemment on notera la domination des contenus en anglais (un peu plus de 60%) le français ne comptant que pour 22%, l'espagnol et l'allemand suivent avec moins de 5%. Dans la suite de l'exercise on se concentre sur le corpus anglophone, on laisse le soin au lecteur de reproduire l'analyse sur les autres langues.
 
-On représente celà par une sorte de pyramide des ages composées par les langages ....(une jolie dataviz à faire). Le second diagramme donne les proportion d'avis par langue au cours de la période : on assiste à une forte diversication des langues. En 2010 les commentaires sont essentiellement en anglais, le français émergent en 2013 pour prendre un tiers des avis produits chaque année. Les autres langue progressent aussi et l'anglais cède du terrain ppour ne plus représenté que la moitié des avis.
+On représente celà par une sorte de pyramide des ages composées par les langages. Le second diagramme donne les proportion d'avis par langue au cours de la période : on assiste à une forte diversication des langues. En 2010 les commentaires sont essentiellement en anglais, le français émerge en 2013 pour prendre un tiers des avis produits chaque année. Les autres langues progressent aussi et l'anglais cède du terrain pour ne plus représenter que la moitié des avis.
 
 ```{r langage02, include=TRUE, caption="la distribution des avis par pays"}
 
@@ -131,9 +131,9 @@ Table <- with(df, table(langues,year))
 Pays<-as.data.frame(Table)
 
 #la fréquence par pays
-g<-ggplot(Pays,aes(x=reorder(year,Freq),y=Freq, group=year))+geom_bar(stat="identity",aes(fill=langues),position="stack")+coord_flip()+theme_minimal()+theme(text = element_text(size=10))+scale_fill_brewer( direction = -1)
+g<-ggplot(Pays,aes(x=reorder(year,Freq),y=Freq, group=year))+geom_bar(stat="identity",aes(fill=langues),position="stack")+coord_flip()+theme_minimal()+theme(text = element_text(size=10))+scale_fill_brewer( direction = -1)+labs(title = "Fréquence des langues dans le corpus",caption = "AirBnb Inside",x="temps",y="nombre d'avis")
 g
-gb<-ggplot(Pays,aes(x=year,y=Freq,group=year))+geom_bar(stat="identity",aes(fill=langues),position="fill")+coord_flip()+theme_minimal()+theme(text = element_text(size=10))+scale_fill_brewer( direction = -1)
+gb<-ggplot(Pays,aes(x=year,y=Freq,group=year))+geom_bar(stat="identity",aes(fill=langues),position="fill")+coord_flip()+theme_minimal()+theme(text = element_text(size=10))+scale_fill_brewer( direction = -1)+labs(title = "Proportion des langues dans le corpus",caption = "AirBnb Inside",x="temps",y="% des avis")
 gb
 #creation des sous corpus
 df_fr <-subset(df,langue=="french")
@@ -162,7 +162,7 @@ gender$gender[gender$gender==1]<-"Male"
 gender$gender[gender$gender==0]<-"Female"
 
 
-g21<-ggplot(gender,aes(x=gender,y=n))+geom_bar(aes(fill=gender),stat="identity")+coord_flip()+theme_minimal()+theme(text = element_text(size=9))+scale_fill_brewer(palette="Accent")
+g21<-ggplot(gender,aes(x=gender,y=n))+geom_bar(aes(fill=gender),stat="identity")+coord_flip()+theme_minimal()+theme(text = element_text(size=9))+scale_fill_brewer(palette="Accent")+labs(title = "Fréquence des genres",caption = "AirBnb Inside",x="Genre",y="nombre d'avis")
 g21
 
 df_en$m<-1
@@ -173,7 +173,7 @@ locuteur$gender[locuteur$gender==2]<-"other"
 locuteur$gender[locuteur$gender==1]<-"Male"
 locuteur$gender[locuteur$gender==0]<-"Female"
 
-g21<-ggplot(locuteur,aes(x=reorder(reviewer_name,m),y=m,group=gender))+geom_bar(aes(fill=gender),stat="identity")+coord_flip()+theme_minimal()+theme(text = element_text(size=8))+scale_fill_brewer(palette="Accent")
+g21<-ggplot(locuteur,aes(x=reorder(reviewer_name,m),y=m,group=gender))+geom_bar(aes(fill=gender),stat="identity")+coord_flip()+theme_minimal()+theme(text = element_text(size=8))+scale_fill_brewer(palette="Accent")+labs(title = "Fréquence des genres",caption = "AirBnb Inside",x="Prénom",y="nombre d'avis")
 g21
 ```
 
@@ -196,13 +196,11 @@ cnlp_init_udpipe(model_name = "english")
 obj <- cnlp_annotate(text, as_strings = TRUE)
 head(cnlp_get_token(obj))
 
-names(obj)
 Vocab<-cnlp_get_token(obj)
-
 Table <- with(Vocab, table(upos))
 ling<-as.data.frame(Table)
 g1<-ggplot(ling,aes(x=reorder(upos,Freq),y=Freq))+geom_bar(stat="identity",fill="darkgreen")+coord_flip()+theme_minimal()+theme(text = element_text(size=9))
-g1
+g1+labs(title = "Fréquence des catégories morpho-syntaxique",caption = "AirBnb Inside",x="catégorie",y="nombre d'avis")
 ```
 
 Nous pouvons désormais travailler sur un corpus linguistiquement plus homogène. On doit remarquer que le caractère cardinal du découpage est aussi fonction de convention. On pourrait imaginer une dectetion des langues plus fine qui prendrait en compte les dialectes. C'est le travail des linguistes que de produire des catégories pertinentes et nous nous fierons à leurs avancées. 
@@ -214,22 +212,28 @@ Le texte à l'état brut comporte de nombreux signes qui amènent peu de sens le
 
 Il s'agira simplement des verbes, des noms propres, des adjectifs et des adverbes. On en présente les trois distributions.
 
+ * les noms communs mettent en tête des éléments liés aux logement, à sa localisation et son voisinage, aisi qu'au séjour et à l'accueil.
+ * Les qualificatifs sont très positifs et principalement expressifs, proche, propre et confortable en sont les attributs les plus fréquents
+ * Les verbes traduisent une intention : recommendation, des mouvements : stay, walk go et des transaction : get, need...
+ 
+ L'expérience reste largement inexprimée si ce n'est pas un jugement très positif qui nous incite à explorer dans une prochaine note les sentiments et émotions associées.
+
 ```{r pos01, fig.width=8, fig.height=4.5, caption ="fréquence des termes par POS : Noms communs, adjectifs et adverbes,verbes"}
 Vocab1<-subset(Vocab, upos=="NOUN")
 Table <- with(Vocab1, table(lemma))
 ling<-as.data.frame(Table) %>% filter(Freq>1100)
-g1<-ggplot(ling,aes(x=reorder(lemma,Freq),y=Freq))+geom_bar(stat="identity",fill="brown1")+coord_flip()+theme_minimal()+theme_minimal()+ theme(axis.title.x=element_blank())+ theme(axis.title.y=element_blank(),axis.text=element_text(size=8))
+g2<-ggplot(ling,aes(x=reorder(lemma,Freq),y=Freq))+geom_bar(stat="identity",fill="brown1")+coord_flip()+theme_minimal()+theme_minimal()+ theme(axis.title.x=element_blank())+ theme(axis.title.y=element_blank(),axis.text=element_text(size=8))+labs(title = "Fréquence des lemmes",x="Noms commun",y="nombre d'avis")
 
 
 Vocab2<-subset(Vocab, upos=="ADJ" | upos=="ADV")
 Table <- with(Vocab2, table(lemma))
-ling<-as.data.frame(Table) %>% filter(Freq>1300)
+ling<-as.data.frame(Table) %>% filter(Freq>1200)
 g2<-ggplot(ling,aes(x=reorder(lemma,Freq),y=Freq))+geom_bar(stat="identity",fill="brown2")+coord_flip()+theme_minimal()+theme(text = element_text(size=3))+theme_minimal()+ theme(axis.title.x=element_blank())+ theme(axis.title.y=element_blank())
 
 
 Vocab3<-subset(Vocab, upos=="VERB")
 Table <- with(Vocab3, table(lemma))
-ling<-as.data.frame(Table) %>% filter(Freq>900)
+ling<-as.data.frame(Table) %>% filter(Freq>800)
 g3<-ggplot(ling,aes(x=reorder(lemma,Freq),y=Freq))+geom_bar(stat="identity",fill="brown4")+coord_flip()+theme_minimal()+theme(text = element_text(size=2), label = NULL)+theme_minimal()+ theme(axis.title.x=element_blank())+ theme(axis.title.y=element_blank())
 
 grid.arrange(g1,g2,g3,ncol=3)
@@ -240,8 +244,20 @@ grid.arrange(g1,g2,g3,ncol=3)
 
 # 4. Un modèle LDA de topics
 
-pour mieux cerner les sujet on utilise le desormais bien connu modèle LDA avec la solution proposée par `text2vec`, 
+pour mieux cerner les sujet on utilise le desormais bien connu modèle LDA avec la solution proposée par [`text2vec`](http://text2vec.org/) et la solution de visualisation interactive LDAvis.
 
+On ne retient qu'une partie du corpus : les adjectifs, les noms communs et les verbes. La méthode nous permet d'oter nombres et signes de ponctuations comme on le fait avec tm et les autres packages, mais aussi les noms de lieux (noms communs) qui peuvent "fragmenter" les topics en donnant une spécificité géographiques. On travaille sur les lemmes ce qui permet de réduire le bruit générés par les fautes d'orthographes inévitables dans un corpus dont la langue est largement vernaculaire.
+
+Les résultat se présente sous la forme d'une liste des termes les plus pertinents selon le critère proposé par @sievert_ldavis_2014 .
+
+En synthèse on trouve :
+ 
+ * Un thème représentant clairement l'accueil par l'hôte. (9%)
+ * Deux thèmes relatif à l'environnement, l'un orienté vers le voisinage accessible au bas de l'immeuble :café, boutiques, restaurants, l'autre à l'interconnexion avec les moyens de transports.(26%)
+ * Deux thèmes relatifs aux éléments matériels : la facilité d'usage du service, les équipements du logement (le lit en tête). (32%)
+ * trois thèmes exprimant la satisfaction l'égard du sejour et l'intention de recommander, un autre manifestant l'enthousiasme, le dernier enfin évoque pleinement l'expérience (36% des tokens).
+ 
+L'expérience n'est pas absence mais pas dominante. L'usage du logement et l'environnement proche sont les thématiques principales des avis de consommateurs.
 
 ```{r lda}
 tf <- cnlp_get_token(obj) %>%
@@ -264,7 +280,7 @@ ggplot(lda_res, aes(x=variable, y= rank, group =  value , label = value)) + scal
 ```
 
 
-on pourra générer une visualisation dynamique qui facilite l'interprétation avec le package [`LDAvis`](https://ldavis.cpsievert.me/reviews/reviews.html), en activant le code suivant :
+on pourra générer une visualisation dynamique qui facilite l'interprétation avec le package [`LDAvis`](https://ldavis.cpsievert.me/reviews/reviews.html), en activant le code suivant. (on peut voir ici une [démonstration](http://www.kennyshirley.com/LDAvis/) )
 
 ```{r lda02, echo=TRUE}
 
@@ -273,10 +289,11 @@ library(LDAvis)
 lda_model$plot()
 ```
 
-Le résultat est une visualisation interactive qui pour chacun des topic indique :
+Le résultat est une visualisation interactive qui pour chacun des topics et des mots indique :
 
  *  sa proximité avec les autres topics via une analyse des similarités, ce qui est représenté sur le panneau de gauche. La surface des cercles est proportionnelle à la frequence des tokens. 
  *  pour un topic donné, le profil est indiqué à droite : les trente principaux termes classés par pertinence, leurs fréquences sont indiquées sur les barres horizontales et comparées à la fréquence du mot dans l'ensemble du corpus.
+ * en cliquant sur les mots on peut aussi observer leur distribution dans les différents groupes. 
 
 ![ldavis06](ldavisHospitalityArrival.jpg)
 
@@ -289,7 +306,7 @@ Certains annotateurs peuvent repérer les règles grammaticales et trouver pour 
 
 on choisit la dépendence "amod" :  adjectival modifier - An adjectival modifier of an NP is any adjectival phrase that serves to modify the meaning of the NP.“Sam eats red meat”amod(meat, red). Pour plus de détail il faut consulter le Stanford typed dependencies manual Marie-Catherine de Marneffe and Christopher D. Manning September 2008 Revised for Stanford Parser v.  1.6.2 in February 2010  on en trouvera un exposé ici [universal dependencies]: (http://universaldependencies.org/u/dep/).
 
-Pour mieux comprendre le modèle LDA on peut ainsi être inciter à étudier certains des lemmes contributifs (on ne travaille plus sur le texte brute mais sur un texte filtré). Dans l'exemple suivant, on s'inspire [du code suivant] (https://github.com/yanhann10/opendata_viz/tree/master/refugee) [commenté ici ](https://towardsdatascience.com/analyse-public-discourse-on-refugees-with-cleannlp-9719a29ed898), on représente les qualificatifs de 4 notions qui apparaissent comme étant les plus fréquentes au travers de leur manifestation par l'usage de noms communs : le logement, son envonnement, l'hôte et le séjour.
+Pour mieux comprendre le modèle LDA on peut ainsi être inciter à étudier certains des lemmes contributifs (on ne travaille plus sur le texte brute mais sur un texte filtré). Dans l'exemple suivant, on s'inspire [du code suivant] (https://github.com/yanhann10/opendata_viz/tree/master/refugee) [commenté ici ](https://towardsdatascience.com/analyse-public-discourse-on-refugees-with-cleannlp-9719a29ed898), on représente les qualificatifs de 4 notions qui apparaissent comme étant les plus fréquentes au travers de leur manifestation par l'usage de noms communs : le logement, son environnement, l'hôte et le séjour.
 
 
 ```{r dep01}
@@ -390,7 +407,7 @@ grid.arrange(gd1,gd2,ncol=2)
 
 # 6. Conclusion
 
-Pour amener l'étude à son terme il faudrait naturellement examiner la distributions des sujets d'avis sous l'angle d'une analyse comparative de groupes de commentateurs. 
+Pour amener l'étude à son terme, il faudrait naturellement examiner la distributions des sujets d'avis sous l'angle d'une analyse comparative de groupes de commentateurs. 
 
 On aura réussi à partir de l'analyse des langues à leur attribué une origine culturelle de ces commentateurs, on aura aussi déterminer leur genre à partir de l'analyse des prénoms. On pourrait aussi les qualifier en terme d'engagement en dénombrant le nombre des avis qu'ils ont produits. Même si on possède peu d'informations relatives aux auteurs des avis, on peut en identifier certaines à partir de ce qu'ils écrivent.
 

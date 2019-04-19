@@ -81,14 +81,14 @@ head(reviews,7)
 
 ## 1.2 Echantillonner les données pour mieux calibrer
 
-Pour mettre au point les analyses, on s'appuie sur un échantillon restreint, on attaque que dans un temps final  les 1 097 737 commentaires qui demanderons plusieurs heures de traitement. Certaines opérations ( détection des langues et annotation) demande un très long temps de calcul. Dans cette version, on se contente de 30 000 commentaires. 
+Pour mettre au point les analyses, on s'appuie sur un échantillon restreint, on attaque que dans un temps final  les 1 097 737 commentaires qui demanderons plusieurs heures de traitement. Certaines opérations (détection des langues et annotation) demande un très long temps de calcul (2h pour 30 000 sur une machine "normale"). Dans cette version, on se contente de 100 000 commentaires. 
 
 Pour se donner une idée plus précise de leur nature, on examine leur distribution dans le temps. Celle-ci illustre la croissance de la plateforme, mais plus encore, dans la mesure où ces commentaires se rapportent à l'offre disponible le 4 février 2019, l'ancienneté des offres dans l'inventaire de Airbnb. 
 
 
 ```{r sample}
 #on échantillonne pour tester le code
-df<-reviews %>% sample_n(30000)
+df<-reviews %>% sample_n(100000)
 #un format qu'aime lubridate
 df$date<-as.POSIXct(df$date)
 
@@ -164,7 +164,7 @@ df_en <-subset(df,langue=="english")
 
 ## 2.2 Les locuteurs
 
-En complément, il peut être utile de s'intéresser aux locuteurs pour lesquels on dispose de peu d'informations sinon leur prénom. On peut en tirer au moins une information sur le genre en matchant avec une [table des prénoms](https://data.world/arunbabu/gender-by-names). 
+En complément, il peut être utile de s'intéresser aux locuteurs pour lesquels on dispose de peu d'informations sinon leur prénom. On peut en tirer au moins une information sur le genre en matchant avec une [table des prénoms](https://data.world/arunbabu/gender-by-names). On pourrait dans le même esprit extraire un age indicatif.( pour une étude fine des prénoms, regardez le travail de [Baptiste Coulmont](http://coulmont.com/livres/prenoms/)
 
 Il semblerait que les femmes contribuent plus que les hommes, mais parmi les prénoms plus fréquents, on retrouve plutôt des prénoms masculins. 
 
@@ -188,7 +188,7 @@ g21
 
 df_en$m<-1
 locuteur<-aggregate(m~reviewer_name,data=df_en, FUN="sum")
-locuteur<-locuteur %>% filter( m>50) %>% left_join(gender_refine_csv, by ="reviewer_name")
+locuteur<-locuteur %>% filter( m>170) %>% left_join(gender_refine_csv, by ="reviewer_name")
 locuteur$gender[locuteur$gender==3]<-"Male and female"
 locuteur$gender[locuteur$gender==2]<-"other"
 locuteur$gender[locuteur$gender==1]<-"Male"
@@ -245,20 +245,20 @@ Il s'agira simplement des verbes, des noms propres, des adjectifs et des adverbe
 ```{r pos01, fig.width=8, fig.height=4.5, caption ="fréquence des termes par POS : Noms communs, adjectifs et adverbes,verbes"}
 Vocab1<-subset(Vocab, upos=="NOUN")
 Table <- with(Vocab1, table(lemma))
-ling<-as.data.frame(Table) %>% filter(Freq>1100)
+ling<-as.data.frame(Table) %>% filter(Freq>2400)
 g2<-ggplot(ling,aes(x=reorder(lemma,Freq),y=Freq))+geom_bar(stat="identity",fill="brown1")+coord_flip()+theme_minimal()+theme_minimal()+ theme(axis.title.x=element_blank())+ theme(axis.title.y=element_blank(),axis.text=element_text(size=8))+labs(title = "Fréquence des lemmes",x="Noms commun",y="nombre d'avis")
 
 
 Vocab2<-subset(Vocab, upos=="ADJ" | upos=="ADV")
 Table <- with(Vocab2, table(lemma))
-ling<-as.data.frame(Table) %>% filter(Freq>1200)
-g3<-ggplot(ling,aes(x=reorder(lemma,Freq),y=Freq))+geom_bar(stat="identity",fill="brown2")+coord_flip()+theme_minimal()+theme(text = element_text(size=3))+theme_minimal()+ theme(axis.title.x=element_blank())+ theme(axis.title.y=element_blank())+labs(title = " ",x="Adverbe et adjectifs",y="nombre d'avis")
+ling<-as.data.frame(Table) %>% filter(Freq>3000)
+g3<-ggplot(ling,aes(x=reorder(lemma,Freq),y=Freq))+geom_bar(stat="identity",fill="brown2")+coord_flip()+theme_minimal()+theme(text = element_text(size=3))+theme_minimal()+ theme(axis.title.y=element_blank(),axis.text=element_text(size=8))+labs(title = " ",x="Adverbe et adjectifs",y="nombre d'avis")
 
 
 Vocab3<-subset(Vocab, upos=="VERB")
 Table <- with(Vocab3, table(lemma))
-ling<-as.data.frame(Table) %>% filter(Freq>800)
-g4<-ggplot(ling,aes(x=reorder(lemma,Freq),y=Freq))+geom_bar(stat="identity",fill="brown4")+coord_flip()+theme_minimal()+theme(text = element_text(size=2), label = NULL)+theme_minimal()+ theme(axis.title.x=element_blank())+ theme(axis.title.y=element_blank())+labs(title = " ",x="verbes",y="nombre d'avis")
+ling<-as.data.frame(Table) %>% filter(Freq>1700)
+g4<-ggplot(ling,aes(x=reorder(lemma,Freq),y=Freq))+geom_bar(stat="identity",fill="brown4")+coord_flip()+theme_minimal()+theme(text = element_text(size=2), label = NULL)+theme_minimal()+ theme(axis.title.y=element_blank(),axis.text=element_text(size=8))+labs(title = " ",x="verbes",y="nombre d'avis")
 
 grid.arrange(g2,g3,g4,ncol=3)
 

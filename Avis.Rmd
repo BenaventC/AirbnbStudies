@@ -9,12 +9,32 @@ output:
     toc_float: true
 bibliography: AirbnbInside.bib
 ---
+<style type="text/css">
 
-![paris](invader_mouff.jpg)
+body, td {
+   font-size: 14px;
+}
+code.r{
+  font-size: 10px;
+}
+h1{
+  font-size: 24px;
+}
+h2{
+  font-size: 18px;
+}
+pre {
+  font-size: 11px
+}
+</style>
 
-[crédit photo](https://unsplash.com/photos/ZG5_505mUog?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText)
+<center>
 
-La proposition première de Airbnb est celle de expérience du voyage. Non pas cette sagesse qui s'accumule au travers des rencontre, mais le sentiment gratifiant de vivre quelque chose exceptionnel, unique, authentique, pleine de rencontre et de découverte. Trouve-t-on l'écho de cette expérience dans le contenu considérable des avis produit par les voyageurs et les hôtes qui les accueillent. A quels aspects de l'expérience se réfèrent-il ? 
+![Paris Invader, rue Mouffetard - source perso](invader_mouff.jpg)
+
+</center>
+
+La proposition première de Airbnb est celle de expérience du voyage. Non pas cette sagesse qui s'accumule au travers des rencontres, mais le sentiment gratifiant de vivre une chose exceptionnelle, unique, authentique, pleine de rencontres et de découvertes. Trouve-t-on l'écho de cette expérience dans le contenu considérable des avis produits par les voyageurs? A quels aspects de l'expérience se réfèrent-il ? 
 
 # 1. Introduction
 
@@ -24,10 +44,11 @@ Le "pipe" de traitement consiste à
 
  * 1) Détecter les langues employées dans le corpus
  * 2) Pour chacune des langues, annoter les tokens (les termes) par une analyse des éléments du discours (POS)
- * 3) Réduire le corpus aux : noms communs, aux adjectifs et adverbes, ainsi qu'au verbes. et éliminer nom de lieu, ponctuations etc.
- * 4) Construire le modèle LDA
- * 5) Le visualiser avec LDAvis
- * 6) Annoter le corpus avec les dépendances et examiner la relation des noms communs et de leurs adjectifs.
+ * 3) Attribuer un genre aux prénoms. 
+ * 4) Réduire le corpus aux : noms communs, adjectifs et adverbes, ainsi qu'aux verbes. On élimine ainsi noms de lieu, ponctuations etc.
+ * 5) Construire le modèle de topics (sujets) par une méthode LDA
+ * 6) Le visualiser avec LDAvis
+ * 7) Annoter le corpus avec les dépendances et examiner la relation des noms communs à de leurs adjectifs.
 
 
 ## 1.1 Initialisation
@@ -62,7 +83,7 @@ head(reviews,7)
 
 Pour mettre au point les analyses, on s'appuie sur un échantillon restreint, on attaque que dans un temps final  les 1 097 737 commentaires qui demanderons plusieurs heures de traitement. Certaines opérations ( détection des langues et annotation) demande un très long temps de calcul. Dans cette version, on se contente de 30 000 commentaires. 
 
-Pour se donner une idée plus précise de leur nature, on examine leur distribution dans le temps. Celle-ci illustre la croissance de la plateforme, mais plus encore, dans la mesure où ces commentaires se rapportent à l'offre disponible le 4 février 2019, l'ancienneté des offres dans l'inventaires de Airbnb. 
+Pour se donner une idée plus précise de leur nature, on examine leur distribution dans le temps. Celle-ci illustre la croissance de la plateforme, mais plus encore, dans la mesure où ces commentaires se rapportent à l'offre disponible le 4 février 2019, l'ancienneté des offres dans l'inventaire de Airbnb. 
 
 
 ```{r sample}
@@ -73,13 +94,13 @@ df$date<-as.POSIXct(df$date)
 
 g01<-df %>% 
   ggplot(aes(date)) + 
-  geom_freqpoly(binwidth = 86400) + labs(title = "Nombre de reviews par jour",caption = "AirBnb Inside",x="temps",y="nb de reviews") +theme_minimal()
+  geom_freqpoly(binwidth = 86400) + labs(title = "Nombre d'avis déposés par jour",caption = "AirBnb Inside",x="temps",y="nb de reviews") +theme_minimal()
 g01
 ```
 
-En réalité il s'agit moins d'une série chronologique que d'une pyramide des ages. En effet les données résultent d'un processus marqué d'abord par la disparition des logements de l'inventaire de Airnb - le faible nombre des avis en 2010 et 2011, reflètent le fait que très peu d'offres proposées à cette période le sont encore à la date de l'étude, mais aussi par le fait u'à chaque période de nouvelles offres génèrent de nouveaux avis. 
+En réalité il s'agit moins d'une série chronologique que d'une pyramide des ages. En effet les données résultent d'un processus marqué d'abord par la disparition des logements de l'inventaire de Airnb - le faible nombre des avis en 2010 et 2011, reflètent le fait que très peu d'offres proposées à cette période le sont encore à la date de l'étude, mais aussi par le fait qu'à chaque période de nouvelles offres génèrent de nouveaux avis. 
 
-Une autre représentation est préférable, en pyramide des âge de l'offre. On s'aperçoit que la valeur centrale de l'age des annonces est de l'ordre de deux ans.( à calculer plus précisément )
+Une autre représentation est préférable, en pyramide des âge de l'offre. On s'aperçoit que la valeur centrale de l'age des annonces est en moyenne de 2,95 années, et une médiane de 2.8 années. La moitiés des avis se rapportent à des offres proposées depuis plus de 3 ans. Il y a une véritable fidélité des propriétaires de logement.
 
 ```{r pyr, include=TRUE, echo=TRUE}
 df$year<-year(df$date)
@@ -98,7 +119,7 @@ Quand les corpus sont constitués de plusieurs langues, il est donc essentiel de
 
 ## 2.1 avec textcat 
 
-A cette fin on emploie le package `textcat`(@hornik_textcat_2013-1), qui s'appuie sur la distribution des ngrams propre à chaque langue et qui constituent en quelque sorte leur signature. Le principe est de calculer une distance entre la distribution des ngram du texte cible avec celle qui caractérise les langues. 
+A cette fin on emploie le package `textcat`(@hornik_textcat_2013), qui s'appuie sur la distribution des ngrams propre à chaque langue et qui constituent en quelque sorte leur signature. Le principe est de calculer une distance entre la distribution des ngram du texte cible avec celle qui caractérise les langues. 
 
 ![calcul de distance à la langue](distancelangue.jpg)
 
@@ -143,9 +164,9 @@ df_en <-subset(df,langue=="english")
 
 ## 2.2 Les locuteurs
 
-en compléments, il peut être utile de s'intéresser aux locuteurs pour lesquels on dispose de peu d'informations sinon leur pseudonymes. 
+En complément, il peut être utile de s'intéresser aux locuteurs pour lesquels on dispose de peu d'informations sinon leur prénom. On peut en tirer au moins une information sur le genre en matchant avec une [table des prénoms](https://data.world/arunbabu/gender-by-names). 
 
-On peut en tirer au moins une information sur le genre en matchant avec une [table des prénoms](https://data.world/arunbabu/gender-by-names). Il semblerait que les femmes contribuent plus que les hommes, mais parmi les prénoms plus fréquents, on retrouve plutôt des hommes.
+Il semblerait que les femmes contribuent plus que les hommes, mais parmi les prénoms plus fréquents, on retrouve plutôt des prénoms masculins. 
 
 
 ```{r pseudo , echo = FALSE}
@@ -181,26 +202,29 @@ g21
 
 # 3. La lemmatisation
 
-Avant d'explorer plus avant le contenu des tweets, on va d'abord annoter le corpus en utilisant les ressources de `cleanNLP` et en particulier son outil d'analyse des parties du discours et de lemmatisation qui permettra à la fois d'obtenir les lemmes correspondants à chaque des termes mais aussi à leur forme morphosyntaxique. Nous nous inspirons largement de leur [étude de cas] (https://cran.r-project.org/web/packages/cleanNLP/vignettes/case_study.html)
+Avant d'explorer plus avant le contenu des tweets, on va d'abord annoter le corpus en utilisant les ressources de `cleanNLP` et en particulier son outil d'analyse des parties du discours et de lemmatisation qui permettra à la fois d'obtenir les lemmes correspondants à chaque des termes mais aussi à leur forme morphosyntaxique. Nous nous inspirons largement de leur [étude de cas](https://cran.r-project.org/web/packages/cleanNLP/vignettes/case_study.html)
 
 ## 3.1 Des éléments du discours
 
 
-La composition en termes morphosyntaxique n'est pas forcément évidente à interprêter, il faudrait connaitre la distribution dans un corpus de référence. Mais cette annotation est cependant utile pour filtrer le contenu.
+La composition en termes morphosyntaxique n'est pas forcément évidente à interprêter, il faudrait connaitre la distribution dans des corpus de référence. Mais cette annotation est cependant utile pour filtrer le contenu.
 
-```{r lemme01, echo = TRUE}
+```{r lemme00, echo = TRUE}
 #library(cleanNLP)
 text<-df_en$comments
 
 cnlp_init_udpipe(model_name = "english")
 obj <- cnlp_annotate(text, as_strings = TRUE)
 head(cnlp_get_token(obj))
+```
+
+```{r lemme01, echo = FALSE}
 
 Vocab<-cnlp_get_token(obj)
 Table <- with(Vocab, table(upos))
 ling<-as.data.frame(Table)
 g1<-ggplot(ling,aes(x=reorder(upos,Freq),y=Freq))+geom_bar(stat="identity",fill="darkgreen")+coord_flip()+theme_minimal()+theme(text = element_text(size=9))
-g1+labs(title = "Fréquence des catégories morpho-syntaxique",caption = "AirBnb Inside",x="catégorie",y="nombre d'avis")
+g1+labs(title = "Fréquence des catégories morpho-syntaxiques",caption = "AirBnb Inside",x="catégorie",y="nombre d'avis")
 ```
 
 Nous pouvons désormais travailler sur un corpus linguistiquement plus homogène. On doit remarquer que le caractère cardinal du découpage est aussi fonction de convention. On pourrait imaginer une dectetion des langues plus fine qui prendrait en compte les dialectes. C'est le travail des linguistes que de produire des catégories pertinentes et nous nous fierons à leurs avancées. 
@@ -228,15 +252,15 @@ g2<-ggplot(ling,aes(x=reorder(lemma,Freq),y=Freq))+geom_bar(stat="identity",fill
 Vocab2<-subset(Vocab, upos=="ADJ" | upos=="ADV")
 Table <- with(Vocab2, table(lemma))
 ling<-as.data.frame(Table) %>% filter(Freq>1200)
-g2<-ggplot(ling,aes(x=reorder(lemma,Freq),y=Freq))+geom_bar(stat="identity",fill="brown2")+coord_flip()+theme_minimal()+theme(text = element_text(size=3))+theme_minimal()+ theme(axis.title.x=element_blank())+ theme(axis.title.y=element_blank())
+g3<-ggplot(ling,aes(x=reorder(lemma,Freq),y=Freq))+geom_bar(stat="identity",fill="brown2")+coord_flip()+theme_minimal()+theme(text = element_text(size=3))+theme_minimal()+ theme(axis.title.x=element_blank())+ theme(axis.title.y=element_blank())+labs(title = " ",x="Adverbe et adjectifs",y="nombre d'avis")
 
 
 Vocab3<-subset(Vocab, upos=="VERB")
 Table <- with(Vocab3, table(lemma))
 ling<-as.data.frame(Table) %>% filter(Freq>800)
-g3<-ggplot(ling,aes(x=reorder(lemma,Freq),y=Freq))+geom_bar(stat="identity",fill="brown4")+coord_flip()+theme_minimal()+theme(text = element_text(size=2), label = NULL)+theme_minimal()+ theme(axis.title.x=element_blank())+ theme(axis.title.y=element_blank())
+g4<-ggplot(ling,aes(x=reorder(lemma,Freq),y=Freq))+geom_bar(stat="identity",fill="brown4")+coord_flip()+theme_minimal()+theme(text = element_text(size=2), label = NULL)+theme_minimal()+ theme(axis.title.x=element_blank())+ theme(axis.title.y=element_blank())+labs(title = " ",x="verbes",y="nombre d'avis")
 
-grid.arrange(g1,g2,g3,ncol=3)
+grid.arrange(g2,g3,g4,ncol=3)
 
 ```
 
@@ -246,18 +270,18 @@ grid.arrange(g1,g2,g3,ncol=3)
 
 pour mieux cerner les sujet on utilise le desormais bien connu modèle LDA avec la solution proposée par [`text2vec`](http://text2vec.org/) et la solution de visualisation interactive LDAvis.
 
-On ne retient qu'une partie du corpus : les adjectifs, les noms communs et les verbes. La méthode nous permet d'oter nombres et signes de ponctuations comme on le fait avec tm et les autres packages, mais aussi les noms de lieux (noms communs) qui peuvent "fragmenter" les topics en donnant une spécificité géographiques. On travaille sur les lemmes ce qui permet de réduire le bruit générés par les fautes d'orthographes inévitables dans un corpus dont la langue est largement vernaculaire.
+On ne retient qu'une partie du corpus : les adjectifs, les noms communs et les verbes. La méthode nous permet d'ôter nombres et signes de ponctuations comme on le fait avec tm et les autres packages, mais aussi les noms de lieux (noms communs) qui peuvent "fragmenter" les topics en leur donnant une spécificité géographique. On travaille sur les lemmes ce qui permet de réduire le bruit généré par les fautes d'orthographes inévitables dans un corpus dont la langue est largement vernaculaire.
 
-Les résultat se présente sous la forme d'une liste des termes les plus pertinents selon le critère proposé par @sievert_ldavis_2014 .
+Les résultat se présente sous la forme d'une liste des termes les plus pertinents selon le critère proposé par @sievert_ldavis_2014 pour chacun des sujets identifiés. On opte après essais/erreurs pour un modèle à 8 thèmes qui se regroupent en 4 familles.
 
 En synthèse on trouve :
  
- * Un thème représentant clairement l'accueil par l'hôte. (9%)
- * Deux thèmes relatif à l'environnement, l'un orienté vers le voisinage accessible au bas de l'immeuble :café, boutiques, restaurants, l'autre à l'interconnexion avec les moyens de transports.(26%)
- * Deux thèmes relatifs aux éléments matériels : la facilité d'usage du service, les équipements du logement (le lit en tête). (32%)
- * trois thèmes exprimant la satisfaction l'égard du sejour et l'intention de recommander, un autre manifestant l'enthousiasme, le dernier enfin évoque pleinement l'expérience (36% des tokens).
+ * Un thème représentant clairement l'*accueil par l'hôte*. (9%)
+ * Deux thèmes relatif à l'*environnement*, l'un orienté vers le voisinage accessible au bas de l'immeuble :café, boutiques, restaurants, l'autre à l'interconnexion avec les moyens de transports.(26%)
+ * Deux thèmes relatifs aux *éléments matériels* : la facilité d'usage du service, les équipements du logement (le lit en tête). (32%)
+ * trois thèmes exprimant la *satisfaction* à l'égard du sejour et l'intention de recommander, un autre manifestant l'enthousiasme, le dernier enfin évoque pleinement l'expérience (36% des tokens).
  
-L'expérience n'est pas absence mais pas dominante. L'usage du logement et l'environnement proche sont les thématiques principales des avis de consommateurs.
+L'expérience n'est pas absente mais pas dominante. L'usage du logement et l'environnement proche sont les thématiques principales des avis de consommateurs.
 
 ```{r lda}
 tf <- cnlp_get_token(obj) %>%
@@ -294,10 +318,9 @@ Le résultat est une visualisation interactive qui pour chacun des topics et des
  *  sa proximité avec les autres topics via une analyse des similarités, ce qui est représenté sur le panneau de gauche. La surface des cercles est proportionnelle à la frequence des tokens. 
  *  pour un topic donné, le profil est indiqué à droite : les trente principaux termes classés par pertinence, leurs fréquences sont indiquées sur les barres horizontales et comparées à la fréquence du mot dans l'ensemble du corpus.
  * en cliquant sur les mots on peut aussi observer leur distribution dans les différents groupes. 
+ 
 
 ![ldavis06](ldavisHospitalityArrival.jpg)
-
-
 
 
 # 5. Analyse des dépendances

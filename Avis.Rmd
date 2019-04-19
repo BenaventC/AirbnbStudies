@@ -1,0 +1,401 @@
+---
+title: "Analyse thématique des avis des voyageurs sur AirBnB"
+author: "CB"
+date: "18 avril 2019"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+bibliography: AirbnbInside.bib
+---
+
+![paris](invader_mouff.jpg)
+
+[crédit photo](https://unsplash.com/photos/ZG5_505mUog?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText)
+
+La proposition première de Airbnb est celle de expérience du voyage. Non pas cette sagesse qui s'accumule au travers des rencontre, mais le sentiment gratifiant de vivre quelque chose exceptionnel, unique, authentique, pleine de rencontre et de découverte. Trouve-t-on l'écho de cette expérience dans le contenu considérable des avis produit par les voyageurs et les hôtes qui les accueillent. A quels aspects de l'expérience se réfèrent-il ? 
+
+# 1. Introduction
+
+Dans cette note de recherche nous analysons 1 000 000 d'avis de voyageurs relatifs aux 57000 offres disponibles en février 2019. Ces données proviennent du site [Inside Airbnb](http://insideairbnb.com/get-the-data.html). L'objectif est de construire un modèle de topic sur la base de différentes techniques d'annotation. Elles sont utilisées pour filtrer les éléments du corpus et donner plus de lisibilité aux solutions obtenues. On y utilise une technique d'identification des dépendances syntaxiques pour affiner l'analyse. 
+
+Le "pipe" de traitement consiste à
+
+ * 1) Détecter les langues employées dans le corpus
+ * 2) Pour chacune des langues, annoter les tokens (les termes) par une analyse des éléments du discours (POS)
+ * 3) Réduire le corpus aux : noms communs, aux adjectifs et adverbes, ainsi qu'au verbes. et éliminer nom de lieu, ponctuations etc.
+ * 4) Construire le modèle LDA
+ * 5) Le visualiser avec LDAvis
+ * 6) Annoter le corpus avec les dépendances et examiner la relation des noms communs et de leurs adjectifs.
+
+
+## 1.1 Initialisation
+
+pour l'identification des langues on emploie `texcat`, l'annotation est réalisée avec `cleanNLP`, on emploie `text2vec` pour le LDA, pour la représentation des dépendances `packcircles` sera utile. Pour le détail du code on consultera le [repo]().
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, include=TRUE,message=FALSE,warning=FALSE,cache=TRUE)
+
+library(readr)
+library(tidyverse)
+library(lubridate)
+library(textcat)
+library(cleanNLP)
+library(packcircles)
+library(knitr)
+library(kableExtra)
+library(gridExtra)
+library(text2vec)
+library(reshape2)
+```
+
+la lecture du fichier ne pose aucune difficulté en voici les 7 premiers éléments pour avoir une idée de sa structure.
+
+```{r data01, include=TRUE, message=TRUE}
+library(readr)
+reviews <- read_csv("reviews.csv")
+head(reviews,7)
+```
+
+## 1.2 Echantillonner les données pour mieux calibrer
+
+Pour mettre au point les analyses, on s'appuie sur un échantillon restreint, on attaque que dans un temps final  les 1 097 737 commentaires qui demanderons plusieurs heures de traitement. Certaines opérations ( détection des langues et annotation) demande un très long temps de calcul. Dans cette version, on se contente de 30 000 commentaires. 
+
+Pour se donner une idée plus précise de leur nature, on examine leur distribution dans le temps. Celle-ci illustre la croissance de la plateforme, mais plus encore, dans la mesure où ces commentaires se rapportent à l'offre disponible le 4 février 2019, l'ancienneté des offres dans l'inventaires de Airbnb. 
+
+
+```{r sample}
+#on échantillonne pour tester le code
+df<-reviews %>% sample_n(30000)
+#un format qu'aime lubridate
+df$date<-as.POSIXct(df$date)
+
+g01<-df %>% 
+  ggplot(aes(date)) + 
+  geom_freqpoly(binwidth = 86400) + labs(title = "Nombre de reviews par jour",caption = "AirBnb Inside",x="temps",y="nb de reviews") +theme_minimal()
+g01
+```
+
+En réalité il s'agit moins d'une série chronologique que d'une pyramide des ages. En effet les données résultent d'un processus marqué d'abord par la disparition des logements de l'inventaire de Airnb - le faible nombre des avis en 2010 et 2011, reflètent le fait que très peu d'offres proposées à cette période le sont encore à la date de l'étude, mais aussi par le fait u'à chaque période de nouvelles offres génèrent de nouveaux avis. 
+
+Une autre représentation est préférable, en pyramide des âge de l'offre. On s'aperçoit que la valeur centrale de l'age des annonces est de l'ordre de deux ans.( à calculer plus précisément )
+
+```{r pyr, include=TRUE, echo=TRUE}
+df$year<-year(df$date)
+
+g02<-df %>% 
+  ggplot(aes(year)) + 
+  geom_histogram(binwidth = 1,fill="royalblue3") + labs(title = "Pyramide des âges des annonces",caption = "AirBnb Inside",x="années",y="nombre d'avis") +coord_flip()+scale_x_continuous(breaks = c(2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019))+theme_minimal()
+
+g02
+
+```
+
+# 2. Identification des langues
+
+Quand les corpus sont constitués de langues multiples, il est donc essentiel de pouvoir les identifier afin de leur appliquer un traitement adéquat et indépendant. Les langues se construisent en elle-mêmes, par leur lexique et leur grammaire. 
+
+## 2.1 avec textcat 
+
+A cette fin on emploie le package `textcat`(@hornik_textcat_2013-1), qui s'appuie sur la distribution des ngrams propre à chaque langue et qui constituent en quelque sorte leur signature. Le principe est de calculer une distance entre la distribution des ngram du texte cible avec celle qui caractérise les langues. 
+
+![calcul de distance à la langue](distancelangue.jpg)
+
+
+L'attribution à unelangue se fait avec le critère de la plus faible distance de la cible. 
+
+On examinera la fiche [wikipedia](https://en.wikipedia.org/wiki/N-gram) pour plus de détail sur l'utilisation des Ngrams en NLP.
+
+
+```{r langage01, include=TRUE, echo=TRUE}
+#la détection de langue
+df$langue<-textcat(df$comments) #attention c'est long - une bonne dizaines de minutes.
+```
+
+Incidemment on notera la domination des contenus en anglais (un peu plus de 60%) le français ne comptant que pour 22%, l'espagnol et l'allemand suivent avec moins de 5%  . Dans la suite de l'exercise on se concentre sur le corpus. 
+
+On représente celà par une sorte de pyramide des ages composées par les langages ....(une jolie dataviz à faire). Le second diagramme donne les proportion d'avis par langue au cours de la période : on assiste à une forte diversication des langues. En 2010 les commentaires sont essentiellement en anglais, le français émergent en 2013 pour prendre un tiers des avis produits chaque année. Les autres langue progressent aussi et l'anglais cède du terrain ppour ne plus représenté que la moitié des avis.
+
+```{r langage02, include=TRUE, caption="la distribution des avis par pays"}
+
+df$langue<-as.factor(df$langue)
+df$langues<-"autres"
+df$langues[df$langue=="english"]<-"english"
+df$langues[df$langue=="french"]<-"french"
+df$langues[df$langue=="german"]<-"german"
+df$langues[df$langue=="spanish"]<-"spanish"
+df$langues[df$langue=="portuguese"]<-"portuguese"
+
+Table <- with(df, table(langues,year))
+Pays<-as.data.frame(Table)
+
+#la fréquence par pays
+g<-ggplot(Pays,aes(x=reorder(year,Freq),y=Freq, group=year))+geom_bar(stat="identity",aes(fill=langues),position="stack")+coord_flip()+theme_minimal()+theme(text = element_text(size=10))+scale_fill_brewer( direction = -1)
+g
+gb<-ggplot(Pays,aes(x=year,y=Freq,group=year))+geom_bar(stat="identity",aes(fill=langues),position="fill")+coord_flip()+theme_minimal()+theme(text = element_text(size=10))+scale_fill_brewer( direction = -1)
+gb
+#creation des sous corpus
+df_fr <-subset(df,langue=="french")
+df_en <-subset(df,langue=="english")
+
+```
+
+## 2.2 Les locuteurs
+
+en compléments, il peut être utile de s'intéresser aux locuteurs pour lesquels on dispose de peu d'informations sinon leur pseudonymes. 
+
+On peut en tirer au moins une information sur le genre en matchant avec une [table des prénoms](https://data.world/arunbabu/gender-by-names). Il semblerait que les femmes contribuent plus que les hommes, mais parmi les prénoms plus fréquents, on retrouve plutôt des hommes.
+
+
+```{r pseudo , echo = FALSE}
+df_en <-subset(df,langue=="english")
+gender_refine_csv <- read_csv("gender_refine-csv.csv")%>%mutate(reviewer_name=name)
+df_en<-df_en %>% left_join(gender_refine_csv, by ="reviewer_name")
+
+df_en$n<-1
+
+gender<-aggregate(n~gender,data=df_en, FUN="sum")
+gender$gender[gender$gender==3]<-"Male and female"
+gender$gender[gender$gender==2]<-"other"
+gender$gender[gender$gender==1]<-"Male"
+gender$gender[gender$gender==0]<-"Female"
+
+
+g21<-ggplot(gender,aes(x=gender,y=n))+geom_bar(aes(fill=gender),stat="identity")+coord_flip()+theme_minimal()+theme(text = element_text(size=9))+scale_fill_brewer(palette="Accent")
+g21
+
+df_en$m<-1
+locuteur<-aggregate(m~reviewer_name,data=df_en, FUN="sum")
+locuteur<-locuteur %>% filter( m>50) %>% left_join(gender_refine_csv, by ="reviewer_name")
+locuteur$gender[locuteur$gender==3]<-"Male and female"
+locuteur$gender[locuteur$gender==2]<-"other"
+locuteur$gender[locuteur$gender==1]<-"Male"
+locuteur$gender[locuteur$gender==0]<-"Female"
+
+g21<-ggplot(locuteur,aes(x=reorder(reviewer_name,m),y=m,group=gender))+geom_bar(aes(fill=gender),stat="identity")+coord_flip()+theme_minimal()+theme(text = element_text(size=8))+scale_fill_brewer(palette="Accent")
+g21
+```
+
+ 
+
+# 3. La lemmatisation
+
+Avant d'explorer plus avant le contenu des tweets, on va d'abord annoter le corpus en utilisant les ressources de `cleanNLP` et en particulier son outil d'analyse des parties du discours et de lemmatisation qui permettra à la fois d'obtenir les lemmes correspondants à chaque des termes mais aussi à leur forme morphosyntaxique. Nous nous inspirons largement de leur [étude de cas] (https://cran.r-project.org/web/packages/cleanNLP/vignettes/case_study.html)
+
+## 3.1 Des éléments du discours
+
+
+La composition en termes morphosyntaxique n'est pas forcément évidente à interprêter, il faudrait connaitre la distribution dans un corpus de référence. Mais cette annotation est cependant utile pour filtrer le contenu.
+
+```{r lemme01, echo = TRUE}
+#library(cleanNLP)
+text<-df_en$comments
+
+cnlp_init_udpipe(model_name = "english")
+obj <- cnlp_annotate(text, as_strings = TRUE)
+head(cnlp_get_token(obj))
+
+names(obj)
+Vocab<-cnlp_get_token(obj)
+
+Table <- with(Vocab, table(upos))
+ling<-as.data.frame(Table)
+g1<-ggplot(ling,aes(x=reorder(upos,Freq),y=Freq))+geom_bar(stat="identity",fill="darkgreen")+coord_flip()+theme_minimal()+theme(text = element_text(size=9))
+g1
+```
+
+Nous pouvons désormais travailler sur un corpus linguistiquement plus homogène. On doit remarquer que le caractère cardinal du découpage est aussi fonction de convention. On pourrait imaginer une dectetion des langues plus fine qui prendrait en compte les dialectes. C'est le travail des linguistes que de produire des catégories pertinentes et nous nous fierons à leurs avancées. 
+
+
+## 3.2 verbes, noms communs et adjectif et adverbes
+
+Le texte à l'état brut comporte de nombreux signes qui amènent peu de sens lexical : des point , des noms de lieux, des déterminants. La stratégie que nous engagons est différentes de cette de tm qui juxtapose : mise en minuscule, suppresion des ponctuactions, des mentions et des ref html, notre stratégie n'élimine pas mais se concentre sur les éléments lexicaux les plus signifiants. (au moins de manières premières, les autres éléments secondaires peuvent révéler des inflexions plus fines, comme l'usage de la ponctuation le permet - Proust l'aura démontré ref  les coutures proust)
+
+Il s'agira simplement des verbes, des noms propres, des adjectifs et des adverbes. On en présente les trois distributions.
+
+```{r pos01, fig.width=8, fig.height=4.5, caption ="fréquence des termes par POS : Noms communs, adjectifs et adverbes,verbes"}
+Vocab1<-subset(Vocab, upos=="NOUN")
+Table <- with(Vocab1, table(lemma))
+ling<-as.data.frame(Table) %>% filter(Freq>1100)
+g1<-ggplot(ling,aes(x=reorder(lemma,Freq),y=Freq))+geom_bar(stat="identity",fill="brown1")+coord_flip()+theme_minimal()+theme_minimal()+ theme(axis.title.x=element_blank())+ theme(axis.title.y=element_blank(),axis.text=element_text(size=8))
+
+
+Vocab2<-subset(Vocab, upos=="ADJ" | upos=="ADV")
+Table <- with(Vocab2, table(lemma))
+ling<-as.data.frame(Table) %>% filter(Freq>1300)
+g2<-ggplot(ling,aes(x=reorder(lemma,Freq),y=Freq))+geom_bar(stat="identity",fill="brown2")+coord_flip()+theme_minimal()+theme(text = element_text(size=3))+theme_minimal()+ theme(axis.title.x=element_blank())+ theme(axis.title.y=element_blank())
+
+
+Vocab3<-subset(Vocab, upos=="VERB")
+Table <- with(Vocab3, table(lemma))
+ling<-as.data.frame(Table) %>% filter(Freq>900)
+g3<-ggplot(ling,aes(x=reorder(lemma,Freq),y=Freq))+geom_bar(stat="identity",fill="brown4")+coord_flip()+theme_minimal()+theme(text = element_text(size=2), label = NULL)+theme_minimal()+ theme(axis.title.x=element_blank())+ theme(axis.title.y=element_blank())
+
+grid.arrange(g1,g2,g3,ncol=3)
+
+```
+
+
+
+# 4. Un modèle LDA de topics
+
+pour mieux cerner les sujet on utilise le desormais bien connu modèle LDA avec la solution proposée par `text2vec`, 
+
+
+```{r lda}
+tf <- cnlp_get_token(obj) %>%
+  filter(upos %in% c("ADJ", "NOUN","VERB")) %>%
+  cnlp_utils_tfidf(min_df = 0.05, max_df = 0.95, type = "tf", tf_weight = "raw")
+set.seed(67)
+lda_model = LDA$new(n_topics = 8, doc_topic_prior = 0.1, topic_word_prior = 0.01)
+doc_topic_distr = 
+  lda_model$fit_transform(x = tf, n_iter = 1000, 
+                          convergence_tol = 0.001, n_check_convergence = 25, 
+                          progressbar = FALSE)
+#description des topic en fonction d'un degré de pertinence de lamba ( lambda =1 probabilités)
+
+lda_res<-as.data.frame(lda_model$get_top_words(n = 25, lambda = 0.30))
+lda_res$rank<-as.numeric(row.names(lda_res))
+lda_res<-melt(lda_res,id.vars = c("rank"))
+
+
+ggplot(lda_res, aes(x=variable, y= rank, group =  value , label = value)) + scale_y_reverse() + geom_text(aes(color=variable,size=8/log(rank)))+theme_minimal()+scale_color_hue()+guides(color=FALSE,size=FALSE)
+```
+
+
+on pourra générer une visualisation dynamique qui facilite l'interprétation avec le package [`LDAvis`](https://ldavis.cpsievert.me/reviews/reviews.html), en activant le code suivant :
+
+```{r lda02, echo=TRUE}
+
+# la visualisation interactive
+library(LDAvis)
+lda_model$plot()
+```
+
+Le résultat est une visualisation interactive qui pour chacun des topic indique :
+
+ *  sa proximité avec les autres topics via une analyse des similarités, ce qui est représenté sur le panneau de gauche. La surface des cercles est proportionnelle à la frequence des tokens. 
+ *  pour un topic donné, le profil est indiqué à droite : les trente principaux termes classés par pertinence, leurs fréquences sont indiquées sur les barres horizontales et comparées à la fréquence du mot dans l'ensemble du corpus.
+
+![ldavis06](ldavisHospitalityArrival.jpg)
+
+
+
+
+# 5. Analyse des dépendances
+
+Certains annotateurs peuvent repérer les règles grammaticales et trouver pour un mot cible ses corrélats.  Un nom commun peut être ainsi associé à des adjectifs qui le qualifient et le nuancent.
+
+on choisit la dépendence "amod" :  adjectival modifier - An adjectival modifier of an NP is any adjectival phrase that serves to modify the meaning of the NP.“Sam eats red meat”amod(meat, red). Pour plus de détail il faut consulter le Stanford typed dependencies manual Marie-Catherine de Marneffe and Christopher D. Manning September 2008 Revised for Stanford Parser v.  1.6.2 in February 2010  on en trouvera un exposé ici [universal dependencies]: (http://universaldependencies.org/u/dep/).
+
+Pour mieux comprendre le modèle LDA on peut ainsi être inciter à étudier certains des lemmes contributifs (on ne travaille plus sur le texte brute mais sur un texte filtré). Dans l'exemple suivant, on s'inspire [du code suivant] (https://github.com/yanhann10/opendata_viz/tree/master/refugee) [commenté ici ](https://towardsdatascience.com/analyse-public-discourse-on-refugees-with-cleannlp-9719a29ed898), on représente les qualificatifs de 4 notions qui apparaissent comme étant les plus fréquentes au travers de leur manifestation par l'usage de noms communs : le logement, son envonnement, l'hôte et le séjour.
+
+
+```{r dep01}
+
+dep<-cnlp_get_dependency(obj, get_token = TRUE)
+res <- dep %>%filter(relation == "amod")%>%filter(lemma == "apartment"|lemma == "room")
+
+bub<-res$lemma_target %>%table() %>%sort(decreasing = TRUE) %>%head(n = 40)%>% as.data.frame()
+# libraries library(packcircles)
+
+# Generate the layout
+packing <- circleProgressiveLayout(bub$Freq, sizetype='area')
+packing$radius=0.95*packing$radius
+data = cbind(bub, packing)
+dat.gg <- circleLayoutVertices(packing, npoints=40)
+# ---- Custom the color of the dots: proportional to the value:
+# First I need to add the 'value' of each group to dat.gg.
+# Here I repeat each value 51 times since I create my polygons with 50 lines
+#png("~/Dropbox/R_GG/R_GRAPH/#307_Add_space_between_circles.png", height = 480, width=480)
+gd1<- ggplot() + 
+  geom_polygon(data = dat.gg, aes(x, y, group = id, fill=id), colour = "black", alpha = 0.6) +
+  geom_text(data = data, aes(x, y, size=Freq, label = .), color="black") +
+  theme_void() +   scale_fill_distiller(palette = "BuPu", direction = -1 ) +
+  theme(legend.position="none")+ labs(title="Qualificatifs du lemme 'appartement' et 'room'")+
+  coord_equal()
+
+#place
+
+dep<-cnlp_get_dependency(obj, get_token = TRUE)
+res <- dep %>%filter(relation == "amod")%>%filter(lemma == "place"|lemma == "location")
+
+bub<-res$lemma_target %>%table() %>%sort(decreasing = TRUE) %>%head(n = 40)%>% as.data.frame()
+# libraries library(packcircles)
+
+# Generate the layout
+packing <- circleProgressiveLayout(bub$Freq, sizetype='area')
+packing$radius=0.95*packing$radius
+data = cbind(bub, packing)
+dat.gg <- circleLayoutVertices(packing, npoints=40)
+
+gd2<- ggplot() + 
+  geom_polygon(data = dat.gg, aes(x, y, group = id, fill=id), colour = "black", alpha = 0.6) +
+  geom_text(data = data, aes(x, y, size=Freq, label = .), color="black") +
+  theme_void() +   scale_fill_distiller(palette = "PuRd", direction = 1 ) +
+  theme(legend.position="none")+ labs(title="Qualificatifs des lemmes 'place' et 'location'")+coord_equal()
+
+
+grid.arrange(gd1,gd2,ncol=2)
+```
+
+```{r dep02}
+
+dep<-cnlp_get_dependency(obj, get_token = TRUE)
+res <- dep %>%filter(relation == "amod")%>%filter(lemma == "host")
+
+bub<-res$lemma_target %>%table() %>%sort(decreasing = TRUE) %>%head(n = 40)%>% as.data.frame()
+# libraries library(packcircles)
+
+# Generate the layout
+packing <- circleProgressiveLayout(bub$Freq, sizetype='area')
+packing$radius=0.95*packing$radius
+data = cbind(bub, packing)
+dat.gg <- circleLayoutVertices(packing, npoints=40)
+# ---- Custom the color of the dots: proportional to the value:
+# First I need to add the 'value' of each group to dat.gg.
+# Here I repeat each value 51 times since I create my polygons with 50 lines
+#png("~/Dropbox/R_GG/R_GRAPH/#307_Add_space_between_circles.png", height = 480, width=480)
+gd1<- ggplot() + 
+  geom_polygon(data = dat.gg, aes(x, y, group = id, fill=id), colour = "black", alpha = 0.6) +
+  geom_text(data = data, aes(x, y, size=Freq, label = .), color="black") +
+  theme_void() +   scale_fill_distiller(palette = "YlGn", direction = -1 ) +
+  theme(legend.position="none")+ labs(title="Qualificatifs du lemme 'host'")+
+  coord_equal()
+
+#place
+
+dep<-cnlp_get_dependency(obj, get_token = TRUE)
+res <- dep %>%filter(relation == "amod")%>%filter(lemma == "stay")
+
+bub<-res$lemma_target %>%table() %>%sort(decreasing = TRUE) %>%head(n = 40)%>% as.data.frame()
+# libraries library(packcircles)
+
+# Generate the layout
+packing <- circleProgressiveLayout(bub$Freq, sizetype='area')
+packing$radius=0.95*packing$radius
+data = cbind(bub, packing)
+dat.gg <- circleLayoutVertices(packing, npoints=40)
+
+gd2<- ggplot() + 
+  geom_polygon(data = dat.gg, aes(x, y, group = id, fill=id), colour = "black", alpha = 0.6) +
+  geom_text(data = data, aes(x, y, size=Freq, label = .), color="black") +
+  theme_void() +   scale_fill_distiller(palette = "Blues", direction = 1 ) +
+  theme(legend.position="none")+ labs(title="Qualificatifs des lemmes 'stay' ")+coord_equal()
+
+
+grid.arrange(gd1,gd2,ncol=2)
+```
+
+# 6. Conclusion
+
+Pour amener l'étude à son terme il faudrait naturellement examiner la distributions des sujets d'avis sous l'angle d'une analyse comparative de groupes de commentateurs. 
+
+On aura réussi à partir de l'analyse des langues à leur attribué une origine culturelle de ces commentateurs, on aura aussi déterminer leur genre à partir de l'analyse des prénoms. On pourrait aussi les qualifier en terme d'engagement en dénombrant le nombre des avis qu'ils ont produits. Même si on possède peu d'informations relatives aux auteurs des avis, on peut en identifier certaines à partir de ce qu'ils écrivent.
+
+Reste à systématiser la comparaison : utilise-t-on les même qualificatifs selon qu'on soit un homme, une femme? Selon l'habitude que l'on a du service ? Selon l'origine culturelle? Parle-t-on des mêmes sujets ?
+
+L'objectif de cette note demeure l'exposition de quelques techniques d'analyse et n'a pour but que de stimuler l'imagination. Ses résultats sont des faits que l'on peut questionner grace à l'ampleur du corpus. L'objectif est de fournir un premier outillage pour des recherches mieux problématisées.
+
+# 7. Bibliographie

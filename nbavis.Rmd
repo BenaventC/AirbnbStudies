@@ -1,0 +1,325 @@
+---
+title: 'Plateformes - Une anatomie des versants #airbnb'
+author: "CB"
+date: "28 mars 2019"
+output:
+  html_document: 
+    toc: true
+    toc_depth: 3
+    toc_float: true
+bibliography: AirbnbInside.bib
+---
+<style type="text/css">
+body, td {
+   font-size: 14px;
+}
+code.r{
+  font-size: 10px;
+}
+h1{
+  font-size: 24px;
+}
+h2{
+  font-size: 18px;
+}
+pre {
+  font-size: 11px
+}
+</style>
+
+<center>
+
+![Pole Ka & Tristan des Limbes](doubleface.jpg)
+</center>
+
+Un million d'avis, 57000 offres. C'est le Paris de Airbnb qui, en hivers, au plus bas de la saison, propose plus de 100 000 lits si on considère grossièrement qu'un appartement, même un studio, peut accueillir plus d'une personne. L'hôtellerie parisienne ne proposerait, sur une base fixe dans le temps (les immeubles ne se dilatent pas), un ensemble de 80 000 lits ( indiquer la source).
+
+Dans la base Insider Airbnb, l'analyse des deux versants du marché est possible en considérant du côte de l'offre de logement une situation à une date donnée, mais aussi par le biais des avis d'une idée du versant de la demande. C'est une idée passée, historique, qui ne reflète sans doute pas la demande, mais qui par l'accumulation des traces sous la forme d'avis qui s'accumulent comme les feuilles à l'automne et forment la réputatition de ces offres.
+
+Examinons de plus prêt des objets qu'on considère. Un avis c'est une date qui signale l'ancienneté de l'offre, et par conséquent l'expérience de l'offreur, et c'est aussi un contenu susceptible de faire vasciller une décision, celle d'un voyageur qui cherche un hébergement pour un ou plusieurs jours, peut-être des périodes prolongées. Une offre c'est aussi un calendrier disponible dans le jeu de données qui nous indique les disponibilités au cours de l'année à venir.
+
+Examinons pour le moment cette double distribution.
+
+```{r setup, echo=TRUE, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, include=TRUE, message=FALSE,warning=FALSE)
+library(tidyverse)
+library(lubridate)
+library(gglorenz)
+library(ineq)
+library(gridExtra)
+library(stargazer)
+library(lme4)
+library(knitr)
+library(xtable)
+library(kableExtra)
+library(jtools)
+
+reviews_short <- read_csv("reviews_short.csv")
+listings_short <- read.csv("listings_short.csv", encoding="UTF-8", row.names=NULL)
+reviews_short$date<-as.POSIXct(reviews_short$date)
+
+```
+
+
+# 1.Distribution des avis entre les offres
+
+## 1.1 distribution dans le temps 
+
+Elle est déja abordée dans la [note de recherche sur les topics](https://benaventc.github.io/AirbnbStudies/Avis.html) où nous en avons donné une distribution entre les langues.
+
+On y observe une évolution par saut qui se réalise entre mai et juin. Il y a là un pic et il peut être amusant d'analyser plus finelement les saisonnalités. L'aspect visuel nous suffira. Les données de 2019 sont très incomplètes. Nous les incluons pour avoir une image très précise des données que nous traitons. Les derniers avis sont peut être les plus déterminants.
+
+Sur 2018 1500 avis sont laissé chaque jour et correspondent ainsi à autant de location. Une esmitation grossière annuelle est donc de 547 000 locations. 
+
+```{r quanti01}
+g<-reviews_short %>%  ggplot(aes(date)) + geom_freqpoly(binwidth = 86400) + labs(title = "Nombre d'avis (par période de 10j)",caption = "Archives personnelles",x="temps",y="nb d'avis (par j)") +theme_minimal()
+g
+```
+
+## 1.2 La concentration des avis 
+
+On calcule d'abord le nombre d'avis par logement par agrégation. C'est en moyenne 23 avis et donc 23 locations, la médiane est à 9. La moitié des logements ont été loués moins d'une dizaine de fois auparant. le maximum est à 754 avis et donc locations. 
+
+L'indice de gini est de 0.66, il indique une très forte inégalité et la courbe de lorenz, montre que 25 % du parc représente 75% des avis, inversement 75% des offres se disputent un quart de la production d'avis et donc autant  de location.
+
+Nous devons garder à l'esprit l'ambiguité de cet indicateurs : il indique autant l'activité passée qu'un volume de texte, et donc une probabilité d'être vu, et réservée. L'inégalité n'est pas qu'un résultat ( le nombre d'avis obtenus et de transaction) elle est aussi une cause : si peu obtiennent une exposition plus grande que ce qu'ils ont à offrir (des studio ou appartement), ils augmentent les probabilités d'être réservé à nouveau. On retrouve l'idée de l'attachement préférentiel où les ressources vont de préférence vers ceux qui en disposent déjà. (barabazi 2003)
+
+
+```{r quanti02, include=TRUE, fig.width=8,fig.height=6}
+
+#on calcule le nombre d'avis par logement
+Avis<-reviews_short %>%
+  filter(listing_id != 1) %>% mutate(n=1) %>% 
+  group_by(listing_id) %>%
+  summarise(avis = sum(n))
+mean<-round(mean(Avis$avis),1)
+median<-median(Avis$avis)
+max<- max(Avis$avis)
+g1<-ggplot(Avis, aes(x=avis)) +geom_histogram(binwidth=1,fill="coral3")+theme_minimal()+xlim(0,400)+ylim(0,2500)+annotate("text", x=200, y=2000, size=3,label= paste0("moyenne=",mean,"- médiane=", median,"- max=",max))+labs(x = "nombre d'avis par  offre", y = "Fréquences", title = "Distribution du nombre d'avis par offre", caption = "")
+
+#on analyse la concentration
+gini<-round(ineq(Avis$avis,type = c("Gini")),2)
+
+g2<-Avis %>%
+    ggplot(aes(avis)) +
+    stat_lorenz(desc = TRUE,size=1.2,color="darkred") +
+    coord_fixed() +
+    geom_abline(linetype = "dashed") +
+    theme_minimal() +labs(x = "Part cumulée des offres",
+         y = "Part cumulée des avis",
+         title = "Concentration du nombre d'avis par offre",
+         caption = "") +
+  annotate("text", x=.35, y=.6, size=3,label= paste0("indice de Gini=",gini))
+grid.arrange(g1,g2,ncol=2)
+
+
+```
+
+# 2. Concentration des annonces
+
+Il est néçessaire d'approfondir l'analyse en tenant compte du temps, et en pondérant le nombre d'avis par l'ancienneté de l'annonce.
+
+
+## 2.1 Nombre d'offres par  hôte
+
+on va aggrégé les offre sur le code du compte de l'hôte. La distribution est ici beaucoups moins concentrée même si la distribution est rtès fortement asymétrique, pour la très grandes majorité des offreurs le nombre de produit se limite à une unité. Ceux qui proposent plus de 3 logements sont en nombre infime, des poussières. Il y a cependant un compte qui offre 209 logements.
+
+Il peut être utile de se donner une norme pour qualifier le caractère professionnel. Compte tenu de la distibution, on retient une tripe catégorisation : 1 logement, 2 ou trois logements, quatre plus de logements. En suppoosant que le revenu est de l'ordre de400 euros/ mois par logement, la première situation corresponda à un revenu de compléent, la seconde à une petite rente immobilère, la troisième à une activité professionnelle qui peut fournir un revenu complet. 
+
+On s'aperçoit que 5% des offreurs les plus richement dotés en studios et appartement représente 20% des offres, mais audelà la courbe devient linéaire, indiquant que 95% des autres se contentent de proposer un seul logement sur la plateforme. 
+
+Si l'offre est égalitaire, la popularité ne l'est pas et on peut se demander si la compétence des propritéaires, ou dumoins des gestionnaires, ne fait pas la différence. On écartera pas l'hypothèse des dotations inégales. Un bel appart dans le 5ème avec vue le le panthéon n'est pas le même produit qu'une chambre de bonne à vaugirard. On notera en tous cas cette asymétrie. 
+
+```{r cars}
+L<-listings_short %>%
+  filter(host_id != 1) %>% mutate(n=1) %>% 
+  group_by(host_id) %>%
+  summarise(nb_annonce = sum(n))
+mean<-round(mean(L$nb_annonce),1)
+median<-median(L$nb_annonce)
+max<- max(L$nb_annonce)
+
+g3<-ggplot(L, aes(x=nb_annonce)) +
+  geom_histogram(binwidth=1,fill="coral2")+
+  theme_minimal()+xlim(0,20)+
+  labs(x = "nombre d'annonce", y = "Fréquences", title = "Distribution du nombre d'annonce par hôte")+
+  annotate("text", x=10, y=30000, size=3,label= paste0("moyenne=",mean,"- médiane=", median,"- max=",max))
+
+
+gini<-round(ineq(L$nb_annonce,type = c("Gini")),2)
+
+g4<-L %>%
+    ggplot(aes(nb_annonce)) +
+    stat_lorenz(desc = TRUE,size=1.2,color="Darkgreen") +
+    coord_fixed() +
+    geom_abline(linetype = "dashed") +
+    theme_minimal() +labs(x = "Proportion des offreurs",
+         y = "Proportion cumulée des offres",
+         title = "Concentration des offres",
+         caption = "") +
+  annotate("text", x=0.25, y=0.9,size=3, label= paste0("indice de Gini=",gini))
+grid.arrange(g3,g4,ncol=2)
+
+```
+
+# 3. Une idée des prix
+
+Puis qu'on a deux versants, et s'agit d'une place de marché, c'est intéressant de s'intéresser à la distribution des prix qui sont fixés par les propriétaires, mais peuvent être influencés : a) par les recommendations de la plateforme b) par des applications de yiels management telques, c) par des règles morales .... 
+
+## 3.1 Distribution des prix des offres
+
+On la présente par tranche de 10 euros pour garder le sens des grandeurs.
+
+La moitié de l'offre est sous les 80 euros, et en moyenne de 113 euros. un e proportion substantielle sous les deux cents. Mais ça peut monter très avec une offre ici à 25000. Si on considère une moyenne de 3,6 nuits par voyageurs on peut estimer le volume d'affaire à 408 millions d'euros
+
+```{r prix01, echo=FALSE}
+mean<-round(mean(listings_short$price),1)
+median<-median(listings_short$price)
+max<- max(listings_short$price)
+
+g5<-ggplot(listings_short, aes(x=price)) +geom_histogram(binwidth=10,fill="coral4")+theme_minimal()+xlim(0,500)+ annotate("text", x=300, y=5000, size=3,label= paste0("moyenne=",mean,"/ médiane=", median,"/ max=",max))
+
+g5
+```
+
+## 3.2 Quelles variables expliquent le prix ?
+
+
+On élimine dans l'analyse les quelques cas aux prix extrêmes. On s'attache au nombre d'avis, en faisant l'hypothèse que leurs effets joue surtout en fonction de leur recence. On crée donc une séries de variables qui indiquent pour des période récente ( le dernier mois, puis l'avant dernier etc) le nombre d'avis déposé. On s'attend à ce que les effets soient décroissant dans le temps
+
+On ajoute au modèle des variable intrinsèqye au logement
+
+et deux autres indicateurs : le nombre d'offre proposées par l'offreur ansi que le nombre de jour disponible dans l'année qui suit ( jusqu'à fev 2010)
+
+
+
+```{r prix02, echo=FALSE}
+#on compte le nombre d'avis par périodes
+Avis1<-reviews_short %>%
+  filter( (date > ymd("2019-01-03")) ) %>% mutate(n=1) %>% 
+  group_by(listing_id) %>%   summarise(avis_lastmonth1 = sum(n))%>%mutate(id=listing_id)
+
+Avis2<-reviews_short %>%
+  filter( (date < ymd("2019-01-03")) &  (date > ymd("2018-12-04")) ) %>% mutate(n=1) %>% 
+  group_by(listing_id) %>%  summarise(avis_lastmonth2 = sum(n)) %>%mutate(id=listing_id)
+
+Avis3<-reviews_short %>%
+  filter( (date < ymd("2018-12-03")) &  (date > ymd("2018-6-04")) ) %>% mutate(n=1) %>% 
+  group_by(listing_id) %>%  summarise(avis_lastmonth6 = sum(n)) %>%mutate(id=listing_id)
+
+Avis4<-reviews_short %>%
+  filter( (date < ymd("2018-6-03")) ) %>% mutate(n=1) %>% 
+  group_by(listing_id) %>%  summarise(avis_lastmonth6_ = sum(n)) %>%mutate(id=listing_id)
+
+#on matche sur les offres
+listings_shortF<-listings_short %>%left_join(Avis1,by=c("id"))%>%left_join(Avis2,by=c("id"))%>%
+  left_join(Avis3,by=c("id"))%>%left_join(Avis4,by=c("id"))
+#on recode la valkeur manquante par zero
+listings_shortF$avis_lastmonth1[is.na(listings_shortF$avis_lastmonth1)]<-0
+listings_shortF$avis_lastmonth2[is.na(listings_shortF$avis_lastmonth2)]<-0
+listings_shortF$avis_lastmonth6[is.na(listings_shortF$avis_lastmonth6)]<-0
+listings_shortF$avis_lastmonth6_[is.na(listings_shortF$avis_lastmonth6_)]<-0
+
+#on selectionne les offres inférieures à 500 euros
+listings_shortF<-listings_shortF %>% filter(price<500)
+```
+
+Examinons-cependant quelques déterminants potentiels et leur relation bivariée ( modèle auto = gams?) .
+
+ * une relation en cloche pour le nb de reviews inréessante à analyser etisomorphe entre le total des avis ( reservations) et le nombre obtenus au cours du dernier mois. 
+
+```{r prix02a, echo=FALSE}
+
+#un modèle de régression
+
+g11<-ggplot(listings_shortF,aes(x=number_of_reviews,y=price))+geom_smooth(method="auto")+theme_minimal()+xlim(0,400)+scale_y_log10()
+
+g12<-ggplot(listings_shortF,aes(x=avis_lastmonth1,y=price))+geom_smooth(method="auto")+theme_minimal()+xlim(0,9)+scale_y_log10()
+
+g10<-ggplot(listings_shortF,aes(x=calculated_host_listings_count,y=price))+geom_smooth(method="auto")+theme_minimal()+scale_y_log10()+xlim(0,20)
+
+g13<-ggplot(listings_shortF,aes(x=availability_365,y=price))+geom_smooth(method="auto")+theme_minimal()+xlim(0,400)+scale_y_log10()
+grid.arrange(g11,g12,g10,g13,ncol=2)
+```
+## 3.3 un modèle hédonique
+
+Sans façon, on va essayer d'expliquer le prix par un modèle de régression avec deux formulations, l'un simple testée par les MCO, la seconde avec une décomposition de l'erreur pour prendre en compte l'effet de quartier. 
+
+On représente graphiquement avec Jsoft, les effets de nos variables (ils sont standardisés). 
+Ce sont les caractéristiques du logement lui-même qui font le prix. Intrinsèque comme le nombre de pièces, extrinsèque quand il s'agit de l'effet de localisation est prédominant et qualitativement corréhent c'est à l'Elysée que la surtote est la plus fort et à Ménilmontant que le décote est la plus fortes. 
+
+Les comportements des hôtes ont un impact significatif quoique bien moins important : la stratégie de professionnalisation qui peut s'observer dans la proposition de plusieurs logements sur toute l'année, s'associe à une politique de prix plus élevé ce qui est normal puisqu'on a augmenté la disponibilité  et donc les chance de trouver un clients à ce prix.
+
+En revanche le nombre d'avis semble avoir peut d'influence sur le prix -2.34
+
+
+
+```{r prix02b, echo=FALSE}
+listings_shortF$avis_lastmonth1_2<-(listings_shortF$avis_lastmonth1^2)
+
+
+lm01<-lm(formula = price ~  avis_lastmonth1_2+avis_lastmonth1+avis_lastmonth6_+
+           room_type+calculated_host_listings_count+ availability_365+minimum_nights, data = listings_shortF)
+summ(lm01)
+
+lm02<-lm(formula = price ~  avis_lastmonth1_2+avis_lastmonth1+avis_lastmonth6_+
+           room_type+calculated_host_listings_count+ availability_365+minimum_nights +neighbourhood, data =listings_shortF)
+
+summ(lm02)
+#stargazer(lm01,lm02,type="text")
+plot_summs(lm01,lm02,scale = TRUE)
+
+
+```
+
+Le premier résultat est que l'apport du facteur géographique améliore substantiellement le modèle. Il faudra garder une carte en tête.La prise en compte du voisinage, dans la définition que s'est donné Airbnb est plus fine que celle des arrondissemnts - Airbnb risque de redédifinir les quartiers de paris en en proposant sa géographie- apporte une forte contribution au r2. Il faudra explorer des modèles hiérarchiques plus sophistiqués et mieux spécifiés.
+
+Mais c'est un premier coup d'oeil. La fréquence des publications (nombre de publi/ancienneté) joue un rôle négatif quand le contrôle de la location est excercés, celà témpoignerait d'une stratégie agrressive de l'offreur qui baisse ses prix d'autant plus qu'il est recommandé, il sait justement qu'il est recommandé par son prix raisonnable. Il faudra faire attention aux effets de signal.
+
+Le nombre total d'avis a un effet négatif sur les prix. En réalité il faut inverser le raisonnement, des prix plus faibles encouragent la production de commentaires la relation indique la stratégie d'offre. Cependant pour des nombre faibles de commentaires, et donc une faible fréquence de location, la relation est positive. 
+
+La nature du logement pèse : on paye bien moins cher une chambre, pire encore une chambre partagée et les effets ne bougent pas qu'on prenne en compte la location ou pas. Le nombre de logement gérés par les propritéaire a une influence sur le prix. Ceux qui ont plkusieurs offre en portefeuilles maximise les prix. 
+
+Nous avons tous les signes d'une différenciation des stratégies : ce qui n'ont qu'un bien dumpent, ce qui en ont plusieurs, n'hésitent pas à faire grimper les prix aux rideaux. Ils comptent sur une probabilité plus élevées de réservation induite par le nombre d'opportunités qu'ils mettent sur le tapis et n'hésitent pas à les valoriser. De même ceux qui offre leur bien au plus long de l'année le font payer plus cher, ils écument le marché. On a un monde qui se partage entre les avides et les généreux.
+
+
+# 4. la concentration de la valeur potentielle
+
+Puisque des prix très différents sont pratiqués, nous pouvons apprécier la concentration  des échanges en termes monétaires. Un quart des offres rafle la moitié du marché. 
+
+
+
+```{r prix03, echo=FALSE}
+
+g6<-listings_short %>%
+    ggplot(aes(price)) +
+    stat_lorenz(desc = TRUE,size=1.2,color="Darkgreen") +
+    coord_fixed() +
+    geom_abline(linetype = "dashed") +
+    theme_minimal() +labs(x = "Proportion cumulée des offres",
+         y = "Proportion cumulée de la valeur locative",
+         title = "Concentration des revenus potentiels",
+         caption = "") +
+  annotate("text", x=0.25, y=0.9, label= paste0("indice de Gini=",gini))
+g6
+```
+## Un champ
+
+
+Pour conclure et poser des questions examiner la densité des offres selon deux critères : leur disponibilité dans l'année qui vient (définie en nombre de jour) et le prix proposé. ce sont les deux éléments clés que les offreurs peuvent contrôler. Leur appartement reste ce qu'il est.
+
+On représente les deux stratégies de disponiblités, celleà 100% se traduit apparemment à un prix plus élevés. 
+
+
+
+```{r prix, echo=FALSE}
+
+ggplot(listings_short, aes(x = availability_365, y=price))+
+  stat_density_2d(aes(fill = ..level..), geom = "polygon", colour="white")+xlim(1,365)+ylim(1,200)+theme_minimal()+scale_fill_distiller(palette=4, direction=1)
+```
+
+
+#Conclusion
+
+Cette étude essentiellement descriptive nous permets de mieux saisir la dynamique de la plateformes : le rytme passé des résearvations et évaluations consécutive, leur degré de concentration, et d'avoir un premiers regards en examinant certaines corrélations.
+#Références

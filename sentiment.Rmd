@@ -1,0 +1,334 @@
+---
+title: "Analyse du sentiment - Airbnb"
+author: "CB"
+date: "9 avril 2019"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+<style type="text/css">
+
+body, td {
+   font-size: 14px;
+}
+code.r{
+  font-size: 10px;
+}
+h1{
+  font-size: 24px;
+}
+h2{
+  font-size: 18px;
+}
+pre {
+  font-size: 11px
+}
+</style>
+
+<center>
+
+![rues de paris](emotion.jpg)
+
+</center>
+
+# Introduction
+
+Dans cette étude on s'appuie sur un indicateur de sentiment, le NRC, qui présente l'avantage d'offrir différents indicateurs de sentiment, des polarité, et une palette d'émotion qui s'appuient sur les travaux de pluchnik.
+
+On explore la sensibilité et la cohérence de cet indicateur dans cette note technique et on y découvre le moyen de distinguer les contributions constructives des revendications dénonciatrices. 
+
+
+## Initialisation des packages
+
+voir le rmd dans le [projet github](https://github.com/BenaventC/Granddebat)
+
+```{r setup, include = FALSE }
+
+#option pour le tricotage
+knitr::opts_chunk$set(echo = FALSE, include=TRUE,message=FALSE,warning=FALSE,cache=FALSE)
+#chargement des packages
+library(reshape2)           # un accessoire visuel pour l'analyse des correlations
+library(tidyverse)          # la mode pour r c'est le tidy et il y a ggplot2 pour la viz
+#vizu
+library(viridis)            #palette de couleur
+library(gridExtra)          # c'est pour mettre plusieurs graphiques en un seul
+library(syuzhet)             #analyse du sentimeent
+library(DescTools)
+library(knitr)
+library(kableExtra)
+library(readr) #pour lire le fichier csv
+library(textcat)
+```
+
+## Extraction et recodage des données
+
+voir le rmd dans le [projet github](https://github.com/BenaventC/AirbnbStudies)
+
+```{r extract}
+reviews <- read_csv("C:/Users/UserPC/Documents/AtelierR/airbnb/insiderbnb/reviews.csv")
+head(reviews,5)
+```
+
+sélection du sous corpus en anglais
+
+```{r extract01}
+#on échantillonne pour tester le code
+df<-reviews %>% sample_n(5000)
+#un format qu'aime lubridate
+df$date<-as.POSIXct(df$date)
+#on identifie la langue
+df$langue<-textcat(df$comments) #attention c'est long - une bonne dizaines de minutes.
+#on selectionne l'anglais
+df_en <-subset(df,langue=="english")
+
+
+```
+
+# Analyse du sentiment 
+
+on utilise le package [syuzhet](https://www.rdocumentation.org/packages/syuzhet/versions/1.0.4) et en particulier le dictionnaire  "nrc" developpé par Mohammad, Saif M. et al 
+On filtre le corpus sur un critère de 10 caractères minimum ou une dizaine de mots. Pour l'instant on élimine pas les textes très longs qui contribuent plus que proportionnellement au corpus (voir distribution des caractères dans [la note 1](https://benaventc.github.io/GrandDebat/GD01_Intro_cadrage). 
+
+```{r sent02, echo=TRUE}
+df_en$nbcar<-as.numeric(nchar(df_en$comments))
+df_en<-df_en %>% filter(nbcar>10 & nbcar<1200)
+#paramètres
+method <- "nrc"
+lang <- "english"
+phrase<-as.character(df_en$comments)
+#extraction
+my_text_values_french<- get_sentiment(phrase, method=method, language=lang)
+```
+
+## La distribution du sentiment
+
+Le sentiment est plutôt positif, même si une fraction importante des contributions présentent des valeurs négatives. La variance est relativement élevées. Elle se distribue plutôt normalement au moins de manière symétrique.
+
+
+```{r sent03}
+#ajout de la colonne sentiment au tableau de données des contributions:
+sent<-as.data.frame(my_text_values_french)
+sent$sentiment<-as.numeric(sent$my_text_values_french)
+df_en<-cbind(df_en,sent)
+#statistiques 
+mean<-round(mean(df_en$sentiment),2)
+std<-round(sd(df_en$sentiment),2)
+#histogram
+df_en$quintile<-cut(df_en$sentiment, quantile(df_en$sentiment))
+pal=c("red","yellow","green","darkgreen")
+ggplot(df_en, aes(x=sentiment))+geom_histogram(binwidth=1,aes(fill=quintile))+theme_minimal()+xlim(-10,+15)+ annotate("text", x=7, y=150, label= paste0("Moyenne=",mean," Sd=",std ))+  scale_fill_manual(values=c("red3", "orange", "springgreen3", "springgreen4"))
+```
+
+## identification du genre
+
+```{r pseudo , echo = FALSE}
+gender_refine_csv <- read_csv("gender_refine-csv.csv")%>%mutate(reviewer_name=name)
+df_en<-df_en %>% left_join(gender_refine_csv, by ="reviewer_name")
+
+df_en$gender[df_en$gender==3]<-"Male and female"
+df_en$gender[df_en$gender==2]<-"other"
+df_en$gender[df_en$gender==1]<-"Male"
+df_en$gender[df_en$gender==0]<-"Female"
+df_en$gender[is.na(df_en$gender)]<-"other"
+
+
+df_en$n<-1
+
+gender<-aggregate(n~gender,data=df_en, FUN="sum")
+
+
+g21<-ggplot(gender,aes(x=gender,y=n))+geom_bar(aes(fill=gender),stat="identity")+coord_flip()+theme_minimal()+theme(text = element_text(size=9))+scale_fill_brewer(palette="Accent")+labs(title = "Fréquence des genres",caption = "AirBnb Inside",x="Genre",y="nombre d'avis")
+g21
+
+gen_sent <-df_en %>%group_by(gender)%>%summarise(mean=mean(sentiment), sd=sd(sentiment))
+
+g22<-ggplot(df_en,aes(x=gender,y=sentiment))+geom_violin(aes(fill=gender))+coord_flip()+theme_minimal()+theme(text = element_text(size=9))+scale_fill_brewer(palette="Accent")+labs(title = "Le sentiment des genres genres",caption = "AirBnb Inside",x="Genre",y="niveau de sentiment")
+g22
+```
+
+## Un indicateur dépendant de la longueur du texte
+
+
+astuce des quintile
+
+```{r score01 , echo = FALSE}
+
+g24<-ggplot(df_en,aes(x=nbcar, y=sentiment))+geom_point(color="grey")+geom_smooth(method="auto")+geom_smooth(method="lm")
+
+#score de sentiment
+
+df_en$sent_score<-df_en$sentiment*100/df_en$nbcar
+
+g25<-ggplot(df_en,aes(x=nbcar, y=sent_score))+geom_point(color="grey")+geom_smooth(method="auto")+geom_smooth(method="lm")
+
+grid.arrange(g24,g25, ncol=2)
+```
+
+avec cet indicateur les femmes sont moins positive que les hommes
+
+```{r score02 , echo = FALSE}
+
+#statistiques 
+mean<-round(mean(df_en$sent_score),2)
+std<-round(sd(df_en$sent_score),2)
+
+#histogram
+df_en$quintil2<-cut(df_en$sent_score, quantile(df_en$sent_score))
+pal=c("red","yellow","green","darkgreen")
+g26<-ggplot(df_en, aes(x=sent_score))+geom_histogram(aes(fill=quintil2))+theme_minimal()+ annotate("text", x=0, y=60, label= paste0("Moyenne=",mean," Sd=",std ))+  scale_fill_manual(values=c("red3", "orange", "springgreen3", "springgreen4"))
+
+gen_sent <-df_en %>%group_by(gender)%>%summarise(score=mean(sent_score), sd=sd(sent_score), nbcar=mean(nbcar))
+
+
+g27<-ggplot(gen_sent,aes(x=gender,y=score,fill=gender))+geom_bar(stat="identity")+theme_minimal()+theme(text = element_text(size=9))+scale_fill_brewer(palette="Accent")+labs(title = "Le sentiment des genres",caption = "",x="Genre",y="niveau de sentiment") + ylim(0,1.25)+coord_flip()
+
+g28<-ggplot(gen_sent,aes(x=gender,y=sd,fill=gender))+geom_bar(stat="identity")+theme_minimal()+theme(text = element_text(size=9))+scale_fill_brewer(palette="Accent")+labs(title = "Le sentiment des genres",caption = "",x="Genre",y="variance du sentiment") + ylim(0,1.25)+coord_flip()
+
+g29<-ggplot(gen_sent,aes(x=gender,y=nbcar,fill=gender))+geom_bar(stat="identity")+theme_minimal()+theme(text = element_text(size=9))+scale_fill_brewer(palette="Accent")+labs(title = "Le sentiment des genres",caption = "",x="Genre",y="nombre de car.") + ylim(0, 400)+coord_flip()
+
+grid.arrange(g26,g27,g28,g29, ncol=2)
+
+```
+
+
+
+
+
+# Analyse des émotions - nrc
+
+on utilise simplement la fonction `get_nrc_sentiment`, en précisant le dictionnaire français. L'échelle comprend en fait deux éléments : les 8 émotion de base au sens de pluchik, et deux indicateurs de polarité.
+
+
+```{r sent07}
+emotions <- get_nrc_sentiment(phrase,language = "english")
+```
+
+
+## Les polarités
+
+Les textes étant inégaux en taille on va ramener l'indicateur de polarité au nombre de caractères (une base de 100) de chaque contribution. En effet l'algo compte les valence et leur intensité est proportionnel à la longueur du texte. Ce qui est clairement démontré par la seconde figue. 
+
+A partir de ces deux mesures,  4 indicateurs peuvent êtres construits
+
+ *  Positivité : nombre de termes positifs pour 100 signes.
+ *  Négativitivé : nombre de termes positifs pour 100 signes.
+ *  Valence : rapport du nombre de termes positifs pour 100 signes sur les négatifs
+ *  Expressivité : nombre de termes positifs et négatifs pour 100 signes.
+
+le dernier graphe pour apprend que les jugements plutôt positifs sont aussi les plus expressifs. On trouve ici un argument en faveur de l'analyse précédente. 
+
+```{r sent08}
+polarity<-subset(emotions,select=c(positive, negative))
+df3<-cbind(df_en,polarity)
+G1<-ggplot(df3, aes(x=positive))+geom_histogram(binwidth = 1)+xlim(-1,40)+ylim(0,400)+theme_minimal()
+G2<-ggplot(df3, aes(x=negative))+geom_histogram(binwidth = 1)+xlim(-1,40)+ylim(0,400)+theme_minimal()
+grid.arrange(G1,G2,ncol=2)
+G01<-ggplot(df3, aes(x=nbcar,y=positive ))+geom_point()+geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"))+xlim(0,1200)+theme_minimal()
+G02<-ggplot(df3, aes(x=nbcar,y=negative ))+geom_point()+geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"))+xlim(0,1200)+theme_minimal()
+grid.arrange(G01,G02,ncol=2)
+
+
+df3$positivity<-(df3$positive*100)/(df3$nbcar)
+df3$negativity<-(df3$negative*100)/(df3$nbcar)
+df3$valence<-log((df3$positivity/df3$negativity)+0.1)
+df3$emotionnality<-log(df3$positivity+df3$negativity)
+
+G11<-ggplot(df3, aes(x=valence,y=negativity ))+geom_point(color="grey")+geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"))+theme_minimal()
+G12<-ggplot(df3, aes(x=valence,y=positivity ))+geom_point(color="grey")+geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"))+theme_minimal()+xlim(-2,2.5)
+grid.arrange(G11,G12,ncol=2)
+
+                           
+G11<-ggplot(df3, aes(x=emotionnality,y=negativity ))+geom_point(color="grey")+geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"))+theme_minimal()
+G12<-ggplot(df3, aes(x=emotionnality,y=positivity ))+geom_point(color="grey")+geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"))+theme_minimal()+xlim(-2,2.5)
+grid.arrange(G11,G12,ncol=2)
+```
+
+
+
+
+## Les émotions
+
+On se concentre sur les 8 facettes de l'émotion telle que conceptualisée par [Plutchik](https://positivepsychologyprogram.com/emotion-wheel/) 
+
+– trust goes from acceptance to admiration
+– fear goes from timidity to terror
+– surprise goes from uncertainty to amazement
+– sadness goes from gloominess to grief
+– disgust goes from dislike to loathing
+– anger goes from annoyance to fury
+– anticipation goes from interest to vigilance
+– joy goes from serenity to ecstasy
+
+et mesurée sur la base des textes par l'outil NCR élaborée par [Mohammad Saif](http://saifmohammad.com/WebPages/lexicons.html) et pour le français [voir](http://sentiment.nrc.ca/lexicons-for-research/).
+
+On peut raisonner en part relative des émotions dans le mesure où l'outil NCR compte les éléments probables de chacune des émotions. C'est pourquoi on recode les variables, encore une fois les textes long risquent de peser plus que les textes courts, la normalisation est nécessaire.
+
+
+```{r sent10}
+#recodage relatif
+emo<-subset(emotions,select=-c(positive, negative))
+emo$tot<-rowSums (emo, na.rm = FALSE, dims = 1)
+emo$tot[is.na(emo$tot)]<-0.000001
+emo$anger<-emo$anger/emo$tot
+emo$anticipation<-emo$anticipation/emo$tot
+emo$disgust<-emo$disgust/emo$tot
+emo$fear<-emo$fear/emo$tot
+emo$joy<-emo$joy/emo$tot
+emo$sadness<-emo$sadness/emo$tot
+emo$surprise<-emo$surprise/emo$tot
+emo$trust<-emo$trust/emo$tot
+#emo<-subset(emo,select=-c(tot))
+df_en<-cbind(df_en,emo)
+#la distribution des émotions
+  
+emo2<-melt(emo)
+emo2$variable<-factor(emo2$variable, ordered = TRUE,levels = c("joy","trust","fear","surprise","sadness","disgust","anger","anticipation"))
+pal<-c("yellow","green","olivedrab3","green4","royalblue3","purple3","red3","orangered2")
+emo3<-aggregate(value~variable,data=emo2, FUN="mean")
+
+ggplot(data=emo3,  aes(x=variable, y=value, colour=variable)) + 
+  geom_bar(stat="identity", aes(fill=variable)) +
+  xlab("Emotions") + 
+  ylab("%") + 
+  ylim(-0.05,.4) + ggtitle("Distribution des émotions dans le corpus")  + 
+  geom_hline(aes(yintercept=0), lwd=0.3, lty=1) + 
+  coord_polar()+ scale_color_manual(values=pal)+ scale_fill_manual(values=pal)+theme_minimal()
+ggplot(emo2, aes(x=variable, y=value))+geom_violin(aes(fill=variable), alpha=0.7,adjust = 2)+theme_minimal()+ylim(0,1)+ scale_fill_manual(values=pal)
+
+
+gen_sent <-df_en %>%group_by(gender)%>%summarise(joy=mean(joy,na.rm = TRUE),trust=mean(trust,na.rm = TRUE),fear=mean(fear,na.rm = TRUE), surprise=mean(surprise,na.rm = TRUE), sadness=mean(sadness,na.rm = TRUE), disgust=mean(disgust,na.rm = TRUE),anger=mean(anger,na.rm = TRUE),anticipation=mean(anticipation,na.rm = TRUE))
+
+gen_sent<-melt(gen_sent)
+ggplot(gen_sent,aes(x=reorder(variable,value), y=value,group=gender)) +geom_line(aes(color=gender), size=1.2) + theme_minimal()+scale_color_brewer(palette="Accent")
+```
+
+## une typologie
+
+
+
+# Conclusion
+
+## Le résultat 
+
+Un sentiment très positif qui pose d'emblée la question du biais en faveur des commentaires positifs? quelle importance, quelle source?
+
+Une activité peu genrée
+
+## limites
+
+L'analyse du sentiment est un processus plein de piège, et dépends des dictionnaires, celà pose un problème de qualité de la méthode. Il faudra sans doute des benchmark, au minimum l'établissement d'un standard, et examiner la convergence de différentes méthodes. 
+
+Mais ce n'est pas un problème pour l'analyse comparative si les biais sont systématiques et proportionnels. A défaut d'une mesure aux grandeurs établie, on dispose d'un instrument ordinal qui permet au point les comparaisons. Quant à la sensibilité et la fiabilité, une étape suivante sera d'étudier leur convergence avec d'autres méthodes.
+
+la territorialité pose problème, le département n'est pas une bonne unité d'analyse, il moyenne les disparités d'espace et de surface. L'analyse doit être répliquée au niveau communal avec des comparaisons selon des types de communes, de manière à saisir les variations plus fines des environnement sociaux.
+
+
+# Références
+
+à ajouter :
+
+plutchik 
+monnery
+Said

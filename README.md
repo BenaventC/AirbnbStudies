@@ -4,5 +4,5 @@ Dans ce repo on enregistre différentes études réalisée sur le corpus des avi
 
  * 1. [Anatomie des versants offres et avis](https://benaventc.github.io/AirbnbStudies/nbavis.html) : des éléments de cadrage sur la concentration des avis et des offres.
  * 2. [les sujets des avis](https://benaventc.github.io/AirbnbStudies/Avis.html) : POS, lemmes, dependencies, LDA.
- * 3. [le sentiment à l'égard des séjours AirBnb](à venir)
- * 4. Etude de genre.(à venir)
+ * 3. [le sentiment à l'égard des séjours AirBnb](https://benaventc.github.io/AirbnbStudies/sentiment.html) et des émotions, plus une comparaison par genre
+ * 4. prédire les taux de disponibilité
